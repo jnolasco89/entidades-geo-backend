@@ -172,6 +172,7 @@ export default class Consultas {
 
     async getDocumentosPaginados(coleccion, idInicial, elementosPorPagina) {
         let respuesta = null;
+        let totalElementos=await this.db.collection(coleccion).get().then(res => {return res.size;});
         
         if (idInicial == null) {
             let pagina = this.db.collection(coleccion).orderBy('nombre').limit(elementosPorPagina);
@@ -207,7 +208,10 @@ export default class Consultas {
             });
         }
 
-        return respuesta;
+        return {
+            totalDocumentos:totalElementos,
+            documentos:respuesta
+        }
     }
     
 }

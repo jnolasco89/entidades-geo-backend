@@ -101,18 +101,18 @@ app.post('/filtrar-entidades', function(req, res) {
     res.send('OK');
     */
     //servEntidades.getEntidadesFiltradas();
-    let txtFiltro=req.body.textoFiltro;
+    let txtFiltro=null;
+    if(req.body.textoFiltro!=undefined?req.body.textoFiltro!=null?req.body.textoFiltro.length>0:false:false){
+        txtFiltro=req.body.textoFiltro;
+    }
     let tipologiasFiltro=req.body.tipologias;
 
     console.log(txtFiltro);
-    console.log(tipologiasFiltro);
+    //console.log(tipologiasFiltro);
 
-/*
-    servEntidades.getEntidadesFiltradas(textoFiltro,tipologiasFiltro).then(respuesta=>{
+    servEntidades.getEntidadesFiltradas(txtFiltro,tipologiasFiltro).then(respuesta=>{
         res.send(respuesta);
     });
-  */  
-    res.send(tipologiasFiltro);
 });
 
 app.get('/paginacion-entidades', function(req, res) {
@@ -164,7 +164,7 @@ app.get('/entidades', function(req, res) {
 
 //INICIANDO EL SERVIDOR --------------------------
 //Iniciando servdor en puerto: 8080
-const server = app.listen(8080, function() {
+const server = app.listen(8082, function() {
 
     let host = server.address().address;
     let port = server.address().port;

@@ -110,9 +110,11 @@ export default class Entidades {
 
     async getEntidadesPaginadas(idInicial, elementosPorPagina) {
         //let respuesta = await serv.getDocumentosPaginados("Entidades", idInicial, elementosPorPagina);
-        let entidades = await serv.getDocumentosPaginados("Entidades", idInicial, elementosPorPagina);
-        this.formatearEntidades(entidades);
-        return entidades;
+        let respuesta = await serv.getDocumentosPaginados("Entidades", idInicial, elementosPorPagina);
+        //totalDocumentos:totalElementos,
+        //documentos:respuesta
+        this.formatearEntidades(respuesta.documentos);
+        return respuesta;
         /*
         let entidades = [];
 
@@ -143,15 +145,25 @@ export default class Entidades {
         //let respuesta=await serv.busquedaLike("Entidades",[{valor:'Pro'}]);
         let entidades=[];
         let db=serv.getDB();    
+        let consulta;
+        
+        if(filtroTipologias.length>0){
+            consulta=db.collection("Entidades").where("tipologia", "array-contains-any",filtroTipologias);
+        }else{
+            consulta=db.collection("Entidades");
+        }
+
         //await db.collection("Entidades").where("tipologia", "array-contains-any",[{"id":1,"nombre":"Participación"},{"id":2,"nombre":"Promoción"}])
-        await db.collection("Entidades").where("tipologia", "array-contains-any",filtroTipologias)
+        await consulta
         .get()
         .then(respuesta=>{
             respuesta.forEach(documento=>{
+                //console.log(documento.data());
                 if(filtroTexto!=null){
+                    filtroTexto=filtroTexto.toUpperCase();
                     let regex=new RegExp(`^.*(${filtroTexto}).*$`);
 
-                    if(regex.test(documento.data()['nombre'])){
+                    if(regex.test(documento.data()['nombre'].toUpperCase())){
                         let dataDocumento = documento.data();
                         dataDocumento.id = documento.id;
                         entidades.push(this.formatearEntidad(dataDocumento));
@@ -163,7 +175,7 @@ export default class Entidades {
                 }    
             });
         });
-
+        
         return entidades;
     }
 
