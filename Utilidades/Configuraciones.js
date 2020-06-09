@@ -6,6 +6,7 @@ import cors from 'cors';//Se utiliza para habilitar permisos cors
 
 export default class Config {
     constructor() {
+        //this.directorio='uploads/';
         //CONFIGURANDO MULTER ---------------------------
         const storage = multer.diskStorage({
             destination: function (req, file, cb) {
@@ -26,20 +27,25 @@ export default class Config {
 
         //AGREGANDO LOS COMPONENTES A EXPRESS -------------
         this.app = express();
-        this.app.use(cors({ origin: true,
-  methods: ["POST","GET"],}));
+        this.app.use(cors({
+            origin: true,
+            methods: ["POST", "GET"],
+        }));
         this.app.use(bodyparser.json());
         this.app.use(bodyparser.urlencoded({ extended: true }));
         this.app.use(morgan('dev'));
 
     }
 
-    getApp(){
+    getApp() {
         return this.app;
     }
 
-    getUpload(){
+    getUpload() {
         return this.upload;
     }
 
+    setDirectorio(ruta){
+        this.directorio=ruta;
+    }
 }
