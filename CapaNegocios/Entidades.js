@@ -80,8 +80,8 @@ export default class Entidades {
         */
     }
 
-    async agregarEntidad() {
-        let respuesta = await serv.agregarDocumento("Entidades", { msj: "Hola" });
+    agregarEntidad(entidad) {
+        let respuesta = serv.agregarDocumento("Entidades",entidad);
         return respuesta;
     }
 

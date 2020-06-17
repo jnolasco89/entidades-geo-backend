@@ -19,23 +19,72 @@ export default class Consultas {
         if (!firebase.apps.length) {
             firebase.initializeApp(configFirebase);
         }
-        
+
         this.db = firebase.firestore();
     }
 
-    getDB(){
+    getDB() {
         return this.db;
     }
 
-    agregarDocumento(coleccion, documento) {
-        this.db.collection(coleccion).add(documento)
-            .then(() => {
+    async getSubcoleccion(coleccion, documento, subcoleccion) {
+        let documentosRespuesta = [];
+        await this.db.collection(coleccion)
+            .doc(documento)
+            .collection(subcoleccion)
+            .get().then(documentos => {
+                documentos.forEach(documento => {
+                    let dataDocumento = documento.data();
+                    dataDocumento.id = documento.id;
+                    documentosRespuesta.push(dataDocumento);
+                });
+            });
+        return documentosRespuesta;
+    }
+
+    async getDocumentoEnSubcoleccionPorPropiedad(coleccion, documento, subcoleccion,propiedad, comparacion, valor){
+        let respuesta=await this.db.collection(coleccion)
+        .doc(documento)
+        .collection(subcoleccion)
+        .where(propiedad, comparacion, valor).get()
+        .then((resultado) => {
+            let data = null;
+            resultado.forEach(doc => {
+                data = doc.data();
+                data.id = doc.id;
+            });
+            return data;
+        });
+        return respuesta;
+    }
+
+    async agregarDocumento(coleccion, documento) {
+        let respuesta = null;
+        respuesta = await this.db.collection(coleccion).add(documento)
+            .then((documentoCreado) => {
                 imprmirMsjDeOperacion("Se agrego un documento", "Documento agregado: ", documento);
+                return documentoCreado.id;
+            })
+            .catch((error) => {
+                console.log(error);
+                return null;
+            })
+        return respuesta;
+    }
+
+    async actualizarDocumento(coleccion, documentoId, actualizacion) {
+        let respuesta = null;
+        respuesta = await this.db.collection(coleccion).doc(documentoId)
+            .update(actualizacion)
+            .then(() => {
+                imprmirMsjDeOperacion("Se actualizo el docmento ", "Documento actualizado: ", documentoId);
                 return true;
             })
             .catch((error) => {
                 console.log(error);
+                return null;
             })
+        return respuesta;
     }
 
     agregarPorLotes(coleccion, documentos) {
@@ -57,55 +106,58 @@ export default class Consultas {
     }
 
 
-    async getAllDocumentos(coleccion){
-       let respuesta= await this.db.collection(coleccion).get()
-        .then(respuesta=>{
-            let documentos=[];
+    async getAllDocumentos(coleccion) {
+        let respuesta = await this.db.collection(coleccion).get()
+            .then(respuesta => {
+                let documentos = [];
 
-            respuesta.forEach(documento=>{
-                let dataDocumento = documento.data();
+                respuesta.forEach(documento => {
+                    let dataDocumento = documento.data();
                     dataDocumento.id = documento.id;
                     documentos.push(dataDocumento);
+                });
+
+                return documentos;
+            })
+
+        return respuesta;
+    }
+
+    async getPropiedadDocumento(coleccion, documento, propiedad) {
+        let respuesta = await this.db.collection(coleccion).doc(documento).get()
+            .then((documento) => {
+                return documento.get(propiedad);
             });
 
-            return documentos;
-        })
-
         return respuesta;
     }
 
-    async getPropiedadDocumento(coleccion,documento,propiedad){
-        let respuesta=await this.db.collection(coleccion).doc(documento).get()
-        .then(documento=>{
-            return documento.get(propiedad);
-        });
-
-        return respuesta;
-    }
-
-    async getDocumentoPorPropiedad(coleccion,propiedad,comparacion,valor){
-        let respuesta=await this.db.collection(coleccion).where(propiedad,comparacion,valor).get()
-        .then((resultado)=>{
-            let data=null;
-            resultado.forEach(doc=>{
-                data=doc.data();
+    async getDocumentoPorPropiedad(coleccion, propiedad, comparacion, valor) {
+        let respuesta = await this.db.collection(coleccion).where(propiedad, comparacion, valor).get()
+            .then((resultado) => {
+                let data = null;
+                resultado.forEach(doc => {
+                    data = doc.data();
+                    data.id = doc.id;
+                });
+                return data;
             });
-            return data;
-        });
 
         return respuesta;
     }
 
-    async getDocumentoPorID(coleccion,idDocumento){
-        let respuesta=await this.db.collection(coleccion).doc(idDocumento).get()
-        .then((documento)=>{
-            return documento.data();
-        });
+    async getDocumentoPorID(coleccion, idDocumento) {
+        let respuesta = await this.db.collection(coleccion).doc(idDocumento).get()
+            .then((documento) => {
+                let dataDocumento = documento.data();
+                dataDocumento.id = documento.id;
+                return dataDocumento;
+            });
 
         return respuesta;
     }
 
-    async busquedaLike(coleccion,filtros){
+    async busquedaLike(coleccion, filtros) {
         //{"id":2,"nombre":"Promoción"},{"id":1,"nombre":"Participación"}
         //array-contains-any,in
         //let filtrosL=[{campo:'tipo',operador:'==',valor:1},{campo:'cantidad',operador:'>=',valor:200}];
@@ -122,14 +174,14 @@ export default class Consultas {
            });     
         });
         */
-        let consulta=this.db.collection("Pruebas");
-        consulta=consulta.where('cantidad','>',110).where('cantidad','<',210);
-        consulta=consulta.where('tipo','==',1);
-        consulta.get().then(respuesta=>{
-            respuesta.forEach(documento=>{
-                   console.log("*************************");
-                   console.log(documento.id);   
-                   console.log(documento.data());
+        let consulta = this.db.collection("Pruebas");
+        consulta = consulta.where('cantidad', '>', 110).where('cantidad', '<', 210);
+        consulta = consulta.where('tipo', '==', 1);
+        consulta.get().then(respuesta => {
+            respuesta.forEach(documento => {
+                console.log("*************************");
+                console.log(documento.id);
+                console.log(documento.data());
             });
         });
 
@@ -172,14 +224,14 @@ export default class Consultas {
 
     async getDocumentosPaginados(coleccion, idInicial, elementosPorPagina) {
         let respuesta = null;
-        let totalElementos=await this.db.collection(coleccion).get().then(res => {return res.size;});
-        
+        let totalElementos = await this.db.collection(coleccion).get().then(res => { return res.size; });
+
         if (idInicial == null) {
             let pagina = this.db.collection(coleccion).orderBy('nombre').limit(elementosPorPagina);
 
             respuesta = await pagina.get().then(documentosPagina => {
                 let documentos = [];
-                
+
                 documentosPagina.forEach((documento) => {
                     let dataDocumento = documento.data();
                     dataDocumento.id = documento.id;
@@ -190,7 +242,7 @@ export default class Consultas {
             });
         } else {
             let self = this;
-            
+
             let docRef = this.db.collection(coleccion).doc(idInicial);
             let pagina = await docRef.get().then((ultimoDocumento) => {
                 return self.db.collection(coleccion).orderBy('nombre').startAfter(ultimoDocumento).limit(elementosPorPagina);
@@ -209,11 +261,11 @@ export default class Consultas {
         }
 
         return {
-            totalDocumentos:totalElementos,
-            documentos:respuesta
+            totalDocumentos: totalElementos,
+            documentos: respuesta
         }
     }
-    
+
 }
 
 

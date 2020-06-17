@@ -3,10 +3,13 @@ import EntidadesBl from './CapaNegocios/Entidades';
 import CatalogosBl from './CapaNegocios/Catalogos';
 import UsuariosBl from './CapaNegocios/Usuarios';
 import VotacionesBl from './CapaNegocios/Votaciones';
+import SesionesBl from './CapaNegocios/Sesiones';
 import pdf from 'html-pdf';
 import variables from './Utilidades/Variables';
 import jwt from 'jsonwebtoken';
 import ejs from 'ejs';
+import { verificarToken } from './Utilidades/Utilidades';
+import entidades from './Utilidades/Temporal';
 
 //Iniciando objetos de configuracion
 const conf = new Configuraciones();
@@ -15,6 +18,7 @@ const servEntidades = new EntidadesBl();
 const servCatalogos = new CatalogosBl();
 const servUsuarios = new UsuariosBl();
 const servVotaciones = new VotacionesBl();
+const servSeisiones = new SesionesBl();
 const upload = conf.getUpload();
 
 //CREANDO LOS ENDPOINST --------------------------
@@ -25,65 +29,231 @@ app.get('/', function (req, res) {
 });
 
 
-app.post('/login', function (req, res) {
+app.post('/login-home', function (req, res) {
     let usuario = req.body.usuario;
     let contrasenia = req.body.password;
 
+    //Z7qTArO4AZNocboJ4KM5
     servUsuarios.getUsuario(usuario).then(respUsuario => {
         if (respUsuario == null || respUsuario == undefined) {
             res.status(401).send("El usuario ingresado no existe");
         } else if (contrasenia == respUsuario.password) {
-            let tokenData = {
-                user: usuario
+            //SETEANDO LA FECHA ACTUAL PARA LA SESION
+            let fechaActual = new Date();
+            let [anioI, mesI, diaI] = fechaActual.toISOString().substr(0, 10).split('-');
+            let horaI = fechaActual.getHours() < 10 ? `0${fechaActual.getHours()}` : fechaActual.getHours();
+            let minutosI = fechaActual.getMinutes() < 10 ? `0${fechaActual.getMinutes()}` : fechaActual.getMinutes();
+
+            //SETEANDO LA FECHA DE VENCIMIENTO PARA LA SESION
+            let fechaVencEnSegundos = Math.floor(fechaActual.getTime() / 1000) + (60 * 60);
+            let fechaVencimiento = new Date(fechaVencEnSegundos * 1000);
+            let [anioV, mesV, diaV] = fechaVencimiento.toISOString().substr(0, 10).split('-');
+            let horaV = fechaVencimiento.getHours() < 10 ? `0${fechaVencimiento.getHours()}` : fechaVencimiento.getHours();
+            let minutosV = fechaVencimiento.getMinutes() < 10 ? `0${fechaVencimiento.getMinutes()}` : fechaVencimiento.getMinutes();
+
+            //ESTRUCTURANDO EL OBJETO SESION
+            let sesion = {
+                tipo: { id: 1, nombre: 'sistema' },
+                fechaInicio: `${diaI}/${mesI}/${anioI}`,
+                horaInicio: `${horaI}:${minutosI}`,
+                fechaExpiracion: `${diaV}/${mesV}/${anioV}`,
+                horaExpiracion: `${horaV}:${minutosV}`,
+                fechaFin: null,
+                horaFin: null,
+                idUsuario: respUsuario.id,
+                usuario: respUsuario.usuario,
+                persona: respUsuario.nombreCompleto,
+                activa: true
             };
 
-            //Token con validez de  1 hora 
-            let token = jwt.sign({
-                algorithm: 'RS256',
-                exp: Math.floor(Date.now() / 1000) + (60 * 60),//,Math.floor(Date.now() / 1000) + (60 * 60),
-                data: tokenData
-            }, variables.KEY_TOKEN);
+            //EJECUTANDO LAS CONSULTAS PARA CREAR LA SESION Y EL TOKEN
+            let consultasSesion = async () => {
+                //Agregando la sesion a la base de datos
+                let idSesion = await servSeisiones.agregarSesion(sesion);
 
-            let accesos=[];
-            respUsuario.roles.forEach(rol=>{
-                rol.permisos.forEach(permiso=>{
-                    accesos.push(permiso);
+                //Creando Token con validez de  1 hora 
+                //Token tipo 1 es para home
+                let tokenData = {
+                    user: usuario,
+                    sesion: idSesion,
+                    tipo: 1
+                };
+
+                let token = jwt.sign({
+                    algorithm: 'RS256',
+                    exp: fechaVencEnSegundos,
+                    data: tokenData
+                }, variables.KEY_TOKEN);
+
+                //Agregando el token a la sesion
+                await servSeisiones.actualizarSesion(idSesion, { token: token });
+
+                return token;
+            }
+
+            //CREANDO LA RESPUESTA A ENVIAR
+            consultasSesion().then(token => {
+                console.log(token);
+                //Agregando los accesos permitidos al usuario
+                let accesos = [];
+                respUsuario.roles.forEach(rol => {
+                    rol.permisos.forEach(permiso => {
+                        accesos.push(permiso);
+                    });
                 });
-            });
-            
-            //Crando nombre corto
-            let nombreCorto=respUsuario.primerNombre+' '+respUsuario.primerApellido;
 
-            res.send({
-                token,
-                usuario: {
-                    primerNombre: respUsuario.primerNombre,
-                    segundoNombre: respUsuario.segundoNombre,
-                    tercerNombre: respUsuario.tercerNombre,
-                    primerApellido: respUsuario.primerApellido,
-                    segundoApellido: respUsuario.segundoApellido,
-                    nombreCompleto: respUsuario.nombreCompleto,
-                    nombreCorto:nombreCorto,
-                    usuario: respUsuario.usuario,
-                    accesos:accesos
-                }
-            })
+                //Crando nombre corto
+                let nombreCorto = respUsuario.primerNombre + ' ' + respUsuario.primerApellido;
+
+                res.send({
+                    token,
+                    usuario: {
+                        primerNombre: respUsuario.primerNombre,
+                        segundoNombre: respUsuario.segundoNombre,
+                        tercerNombre: respUsuario.tercerNombre,
+                        primerApellido: respUsuario.primerApellido,
+                        segundoApellido: respUsuario.segundoApellido,
+                        nombreCompleto: respUsuario.nombreCompleto,
+                        nombreCorto: nombreCorto,
+                        usuario: respUsuario.usuario,
+                        accesos: accesos
+                    }
+                })
+            });
+        } else {
+            res.status(401).send("Usuario o contraseña incorrecto");
+        }
+    });
+
+});
+
+app.post('/login-votacion', function (req, res) {
+    let usuario = req.body.usuario;
+    let contrasenia = req.body.password;
+    let idVotacion = req.body.votacion;
+
+    servUsuarios.getUsuarioVotacion(idVotacion, usuario).then(respUsuario => {
+        if (respUsuario == null || respUsuario == undefined) {
+            res.status(401).send("El usuario ingresado no existe");
+        } else if (contrasenia == respUsuario.password) {
+            //SETEANDO LA FECHA ACTUAL PARA LA SESION
+            let fechaActual = new Date();
+            let [anioI, mesI, diaI] = fechaActual.toISOString().substr(0, 10).split('-');
+            let horaI = fechaActual.getHours() < 10 ? `0${fechaActual.getHours()}` : fechaActual.getHours();
+            let minutosI = fechaActual.getMinutes() < 10 ? `0${fechaActual.getMinutes()}` : fechaActual.getMinutes();
+
+            //SETEANDO LA FECHA DE VENCIMIENTO PARA LA SESION
+            let fechaVencEnSegundos = Math.floor(fechaActual.getTime() / 1000) + (60 * 60);
+            let fechaVencimiento = new Date(fechaVencEnSegundos * 1000);
+            let [anioV, mesV, diaV] = fechaVencimiento.toISOString().substr(0, 10).split('-');
+            let horaV = fechaVencimiento.getHours() < 10 ? `0${fechaVencimiento.getHours()}` : fechaVencimiento.getHours();
+            let minutosV = fechaVencimiento.getMinutes() < 10 ? `0${fechaVencimiento.getMinutes()}` : fechaVencimiento.getMinutes();
+
+            //ESTRUCTURANDO EL OBJETO SESION
+            let sesion = {
+                tipo: { id: 2, nombre: 'votacion' },
+                fechaInicio: `${diaI}/${mesI}/${anioI}`,
+                horaInicio: `${horaI}:${minutosI}`,
+                fechaExpiracion: `${diaV}/${mesV}/${anioV}`,
+                horaExpiracion: `${horaV}:${minutosV}`,
+                fechaFin: null,
+                horaFin: null,
+                idUsuario: respUsuario.id,
+                usuario: respUsuario.usuario,
+                persona: respUsuario.nombre,
+                activa: true
+            };
+
+            //EJECUTANDO LAS CONSULTAS PARA CREAR LA SESION Y EL TOKEN
+            let consultasSesion = async () => {
+                //Agregando la sesion a la base de datos
+                let idSesion = await servSeisiones.agregarSesion(sesion);
+
+                //Creando Token con validez de  1 hora 
+                //Token tipo 2 es para votacion
+                let tokenData = {
+                    user: usuario,
+                    sesion: idSesion,
+                    tipo: 2
+                };
+
+                let token = jwt.sign({
+                    algorithm: 'RS256',
+                    exp: fechaVencEnSegundos,
+                    data: tokenData
+                }, variables.KEY_TOKEN);
+
+                //Agregando el token a la sesion
+                await servSeisiones.actualizarSesion(idSesion, { token: token });
+
+                return token;
+            }
+
+            //CREANDO LA RESPUESTA A ENVIAR
+            consultasSesion().then(token => {
+                console.log(token);
+                res.send({
+                    token,
+                    usuario: {
+                        id: respUsuario.id,
+                        nombreCompleto: respUsuario.nombre,
+                        usuario: respUsuario.usuario,
+                        votacion: idVotacion
+                    }
+                })
+            });
         } else {
             res.status(401).send("Usuario o contraseña incorrecto");
         }
     });
 });
 
-app.post('/validar-token', function (req, res, next) {
-    console.log(req.headers.authorization);
+app.post('/cerrar-sesion', (req, res) => {
     if (req.headers.authorization != undefined || req.headers.authorization != null) {
         let token = req.headers.authorization;
+        let tokenDecodificado = jwt.decode(token, { complete: true });
+        let fechaActual = new Date();
+        let [anio, mes, dia] = fechaActual.toISOString().substr(0, 10).split('-');
+        let hora = fechaActual.getHours() < 10 ? `0${fechaActual.getHours()}` : fechaActual.getHours();
+        let minutos = fechaActual.getMinutes() < 10 ? `0${fechaActual.getMinutes()}` : fechaActual.getMinutes();
 
-        try {
-            jwt.verify(token, variables.KEY_TOKEN);
-            res.status(200).send({ estado: true, informacion: "Token valido" });
-        } catch (err) {
-            res.status(401).send({ estado: false, informacion: "La sesión a expirado" });
+        servSeisiones.actualizarSesion(tokenDecodificado.payload.data.sesion, { activa: false, fechaFin: `${dia}/${mes}/${anio}`, horaFin: `${hora}:${minutos}` }).then(r => {
+            res.status(200).send({ estado: false, informacion: "Sesion terminada" });
+        });
+    } else {
+        res.status(500).send("No se puede cerrar la sesión");
+    }
+});
+
+app.post('/validar-token', function (req, res, next) {
+    if (req.headers.authorization != undefined || req.headers.authorization != null) {
+        let token = req.headers.authorization;
+        let tokenDecodificado = jwt.decode(token, { complete: true });
+        let tipoToken = req.body.tipo;
+
+        //Se verifica si tokenDecodificado es null porque podria ser que enviara cualquier otro tipo de datos en
+        //el encabezado authorization, y como solamente un token puede ser decodificado, cualquier otro tipo de
+        //deto devolveria null.
+        if (tokenDecodificado != undefined ? tokenDecodificado != null : false) {
+            servSeisiones.getSesion(tokenDecodificado.payload.data.sesion).then(sesion => {
+                if (sesion.activa) {
+                    try {
+                        jwt.verify(token, variables.KEY_TOKEN);
+                        if (tokenDecodificado.payload.data.tipo != tipoToken * 1) {
+                            res.status(401).send({ estado: false, informacion: "No tiene acceso a este recurso" });
+                        }
+                        res.status(200).send({ estado: true, informacion: "Token valido" });
+                    } catch (err) {
+                        res.status(401).send({ estado: false, informacion: "La sesión a expirado" });
+                    }
+                } else {
+                    servSeisiones.actualizarSesion(tokenDecodificado.payload.data.sesion, { activa: false }).then(r => {
+                        res.status(401).send({ estado: false, informacion: "La sesión a expirado" });
+                    });
+                }
+            });
+        } else {
+            res.status(401).send('Debe iniciar sesión');
         }
     } else {
         res.status(401).send('Debe iniciar sesión');
@@ -124,9 +294,16 @@ app.post('/votacion', upload.array('imagenes', 12), function (req, res) {
         data: votacion.nombre
     }, variables.KEY_TOKEN);
     votacion.token = token;
-
-    let respuesta = servVotaciones.agregarVotacion(votacion);
-    res.send(respuesta);
+    votacion.estado = {
+        id: 1,
+        nombre: 'Activa'
+    };
+    servVotaciones.agregarVotacion(votacion);
+    
+        let respuesta = servVotaciones.agregarVotacion(votacion);
+        res.send(respuesta);
+      
+    //res.send('OK');
 });
 
 app.get('/descargar/:file(*)', (req, res) => {
@@ -141,11 +318,80 @@ app.get('/descargar/:file(*)', (req, res) => {
     });
 });
 
-app.get('/votacion/:votacionId',(req,res)=>{
+
+app.post('/voto', (req, res) => {
+    //PASO 1: VALIDAR LA EL TOKEN DE SESION
+    let tokenSesion = req.headers.authorization;
+    let respValidacionTokenSesion = verificarToken(tokenSesion, 2);
+    //FALTA VERIFICAR SI EL TOKEN ESTA ACTIVO MANDAR A VALIDAR Y SINO MANDAR UN 401
+
+
+    let validar = async () => {
+        //PASO 2: VALIDAR SESION EN BASE AL TOKEN
+        let sesionValida = await servSeisiones.validarSesion(respValidacionTokenSesion.data.sesion);
+        
+        if (sesionValida) {
+
+            //PASO 3: VALIDAR EL TOKEN DE LA VOTACION
+            let respValidacionTokenVotacion = verificarToken(req.body.tokenVotacion, null);
+            
+            if (respValidacionTokenVotacion.valido) {
+                
+                //PASO 4: VALIDAR LA VOTACION EN BASE AL ESTADO DE LA BD
+                let votacionActiva = await servVotaciones.validarVotacion(req.body.votacion);
+                
+                if (votacionActiva) {
+                    //PASO 5: SI LA VOTACION ESTA ACTIVA SE PROCEDE A VERIFICAR SI EL USUARIO YA VOTO
+                    console.log(req.body.papeletaOrigen+" ....... "+req.body.papeleta+">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>");
+                    let permitirVoto = await servVotaciones.validarVoto(req.body.votacion, req.body.idUsuario, req.body.papeleta);
+
+                    //PASO 6: VALIDAR SI EL USUARIO YA VOTO
+                    if (permitirVoto) {
+                        let opcionMarcada=await servVotaciones.emitirVoto(req.body.votacion,req.body.papeleta,req.body.papeletaOrigen,req.body.opcion,req.body.idUsuario,req.body.usuario).then(r=>{
+                            return r;
+                        });
+                        return opcionMarcada;
+                    }
+
+                }
+
+            }
+        }
+    
+    }
+    
+    validar().then((r) => {
+        res.status(200).send(r);
+    });
+
+});
+
+/*
+app.get('/votacion/:votacionId', (req, res) => {
     servVotaciones.getVotacion(req.params.votacionId).then(votacion => {
         res.send(votacion);
     });
 });
+*/
+
+app.get('/votacion/:votacionId/:usuarioId', (req, res) => {
+    console.log("ID VOTACION " + req.params.votacionId);
+    console.log("ID USUARIO " + req.params.usuarioId);
+    servVotaciones.getVotacion(req.params.votacionId, req.params.usuarioId).then(votacion => {
+        res.status(200).send(votacion)
+    });
+});
+
+/*
+app.get('/usuario/votaciones/:idUsuario', (req, res) => {
+    console.log(req.params.idUsuario);
+    servUsuarios.getVotacionesUsuario(req.params.idUsuario).then(votacionesUsuario => {
+        servVotaciones.getVotaciones(votacionesUsuario).then(votaciones => {
+            res.status(200).send(votaciones);
+        });
+    });
+});
+*/
 
 app.post('/filtrar-entidades', function (req, res) {
     /*
@@ -214,6 +460,36 @@ app.get('/entidades', function (req, res) {
     });
 });
 
+
+app.get('/prueba', (req, res) => {
+    /*  
+  servEntidades.getAllEntidades().then(entidades=>{
+      console.log("************************>>>>>>>>>>>> "+        entidades.length);
+      res.send(entidades);
+  });*/
+
+    /*
+    entidades.forEach((e,index)=>{
+        console.log(`${index+1}-${e.nombre}`);
+    });
+    
+    res.send('OK');
+    */
+
+    let indexSupremo = 0;
+    let agregar = async () => {
+        for (let index = 0; index < entidades.length; index++) {
+            await servEntidades.agregarEntidad(entidades[index]).then(() => {
+                indexSupremo++;
+            });
+        }
+    };
+    agregar().then(() => {
+        console.log("**************************** SE AGREGARON ************* " + indexSupremo);
+        res.send("Ok");
+    });
+
+});
 
 //INICIANDO EL SERVIDOR --------------------------
 //Iniciando servdor en puerto: 8080
